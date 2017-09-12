@@ -1,47 +1,126 @@
 '''
-synbiochemdev (c) University of Manchester 2015
+synbiochem (c) University of Manchester 2017
 
-synbiochemdev is licensed under the MIT License.
+synbiochem is licensed under the MIT License.
 
 To view a copy of this license, visit <http://opensource.org/licenses/MIT/>.
 
 @author:  neilswainston
 '''
+# pylint: disable=invalid-name
+# pylint: disable=too-few-public-methods
+from __future__ import division
+
+from collections import OrderedDict
+from subprocess import Popen
+import re
 import sys
+import tempfile
 
-from riboswitch.vienna import get_minimum_free_energy
-from synbiochem.utils import seq_utils
+from synbiochem.utils.seq_utils import get_all_rev_trans, write_fasta
+import pandas as pd
 
 
-def analyse(pre_seq, trunc_len, tag, post_seq, outfile_name):
-    '''Analyse.'''
-    seqs = []
-    pre_trunc_seq = pre_seq[-trunc_len:]
+class RiboswitchPredicter(object):
+    '''RiboswitchPredicter class.'''
 
-    for rev_trans in seq_utils.get_all_rev_trans(tag):
-        seqs.extend([pre_seq + rev_trans + post_seq,
-                     pre_trunc_seq + rev_trans + post_seq])
+    def __init__(self, pre_seq, trunc_len, tag):
+        self.__df = pd.DataFrame()
+        self.__pre_seq = pre_seq
+        self.__trunc_len = trunc_len
+        self.__df['variant'] = get_all_rev_trans(tag)
 
-    mfes = get_minimum_free_energy(seqs)
+    def get_data(self, temps=None):
+        '''Gets data.'''
+        seqs = self.__get_seqs(self.__pre_seq)
+        trunc_seqs = self.__get_seqs(self.__pre_seq[-self.__trunc_len:])
 
-    outfile = open(outfile_name, 'w')
+        if temps is None:
+            temps = [30.0, 37.0]
 
-    for i in xrange(0, len(seqs), 2):
-        outfile.write('\t'.join([seqs[i], seqs[i + 1],
-                                 str(mfes[i]), str(mfes[i + 1]),
-                                 str(mfes[i] - mfes[i + 1])]) + '\n')
+        for temp in temps:
+            suf = str(temp)
+            self.__df['dg_' + suf] = \
+                _get_mfes(seqs, temp=temp)
+            self.__df['dg_trunc_' + suf] = \
+                _get_mfes(trunc_seqs, temp=temp)
+            self.__df['ddg_' + suf] = \
+                self.__df['dg_' + suf] - self.__df['dg_trunc_' + suf]
 
-    outfile.close()
+        self.__df['gc'] = _get_gc(seqs)
+        self.__df['gc_trunc'] = _get_gc(trunc_seqs)
+
+        return self.__df
+
+    def __get_seqs(self, pre_seq):
+        '''Get sequences.'''
+        return [pre_seq + variant for variant in self.__df['variant']]
+
+
+def _get_mfes(seqs, temp=37.0):
+    '''Run RNAfold.'''
+    fasta_filename = write_fasta(OrderedDict(zip(range(len(seqs)), seqs)))
+
+    rnafold_file = tempfile.NamedTemporaryFile(prefix='rnafold_',
+                                               suffix='.txt',
+                                               delete=False)
+
+    with open(fasta_filename) as fasta_file, \
+            open(rnafold_file.name, 'w') as rnafold_file:
+
+        # This calls RNAfold (kinda like from the command line):
+        process = Popen(['RNAfold',
+                         '--noPS',
+                         '-T', str(temp)],
+                        stdin=fasta_file,
+                        stdout=rnafold_file)
+        process.wait()
+        rnafold_file.flush()
+
+    # Read raw results file:
+    return _read_rnafold_file(rnafold_file.name).values()
+
+
+def _get_gc(seqs):
+    '''Get GC content.'''
+    return [(seq.count('G') + seq.count('C')) / len(seq) for seq in seqs]
+
+
+def _read_rnafold_file(rnafold_filename):
+    '''Read RNAfold file file.'''
+    results = OrderedDict()
+
+    with open(rnafold_filename) as rnafold_file:
+        for line in rnafold_file:
+            if line.startswith('>'):
+                # If this is a fasta header line, store the name:
+                name = line[1:].strip()
+            else:
+                # Look to see if the line contains a number:
+                numbers = re.findall(r'[+-]?\d+.\d+', line)
+
+                if numbers:
+                    # Store name and number in results:
+                    results[int(name)] = float(numbers[0])
+
+    return results
 
 
 def main(args):
-    '''main method'''
-    pre_seq = args[0].strip()
-    trunc_len = int(args[1].strip())
-    tag = args[2].strip()
-    post_seq = args[3].strip()
-    outfile_name = args[4].strip()
-    analyse(pre_seq, trunc_len, tag, post_seq, outfile_name)
+    '''main method.'''
+    pre_seq = args[0]
+    trunc_len = int(args[1])
+    tag = args[2]
+
+    rib_pred = RiboswitchPredicter(pre_seq, trunc_len, tag)
+    df = rib_pred.get_data()
+    print df
+
+    # Normalise:
+    df_norm = df.ix[:, 1:]
+    df_norm = (df_norm - df_norm.mean()) / (df_norm.max() - df_norm.min())
+    df_norm.insert(0, df.ix[:, 0].name, df.ix[:, 0].values)
+    print df_norm
 
 
 if __name__ == '__main__':
