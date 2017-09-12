@@ -7,53 +7,91 @@ To view a copy of this license, visit <http://opensource.org/licenses/MIT/>.
 
 @author:  neilswainston
 '''
+# pylint: disable=invalid-name
+# pylint: disable=too-few-public-methods
+from __future__ import division
+
+from collections import OrderedDict
 from subprocess import Popen
-import os
 import re
+import sys
 import tempfile
 
-from synbiochem.utils import seq_utils
+from synbiochem.utils.seq_utils import get_all_rev_trans, write_fasta
+import pandas as pd
 
 
-def write_csv_to_fasta(csv_filename, fasta_filename):
-    '''Writes a csv file of name, sequence to a fasta file.'''
+class RiboswitchPredicter(object):
+    '''RiboswitchPredicter class.'''
 
-    # Open csv file in read mode, fasta file in write mode:
-    with open(csv_filename, 'r') as csv_file, \
-            open(fasta_filename, 'w') as fasta_file:
-        # Read csv file line by line...
-        for line in csv_file:
-            # Split line into "tokens", separated by commas:
-            tokens = line.split(',')
+    def __init__(self, pre_seq, trunc_len, tag):
+        self.__df = pd.DataFrame()
+        self.__pre_seq = pre_seq
+        self.__trunc_len = trunc_len
+        self.__df['variant'] = get_all_rev_trans(tag)
 
-            # Write header to fasta:
-            fasta_file.write('>' + tokens[0] + '\n')
+    def get_data(self, temps=None):
+        '''Gets data.'''
+        seqs = self.__get_seqs(self.__pre_seq)
+        trunc_seqs = self.__get_seqs(self.__pre_seq[-self.__trunc_len:])
 
-            # Write sequence to fasta:
-            fasta_file.write(tokens[1])
+        if temps is None:
+            temps = [30.0, 37.0]
+
+        for temp in temps:
+            suf = str(temp)
+            self.__df['dg_' + suf] = \
+                _get_mfes(seqs, temp=temp)
+            self.__df['dg_trunc_' + suf] = \
+                _get_mfes(trunc_seqs, temp=temp)
+            self.__df['ddg_' + suf] = \
+                self.__df['dg_' + suf] - self.__df['dg_trunc_' + suf]
+
+        self.__df['gc'] = _get_gc(seqs)
+        self.__df['gc_trunc'] = _get_gc(trunc_seqs)
+
+        return self.__df
+
+    def __get_seqs(self, pre_seq):
+        '''Get sequences.'''
+        return [pre_seq + variant for variant in self.__df['variant']]
 
 
-def run_rnafold(fasta_filename):
-    '''Run RNAfold from fasta file.'''
+def _get_mfes(seqs, temp=37.0):
+    '''Run RNAfold.'''
+    fasta_filename = write_fasta(OrderedDict(zip(range(len(seqs)), seqs)))
 
-    # Generate raw results file:
-    raw_filename = 'raw.txt'
+    rnafold_file = tempfile.NamedTemporaryFile(prefix='rnafold_',
+                                               suffix='.txt',
+                                               delete=False)
 
     with open(fasta_filename) as fasta_file, \
-            open(raw_filename, 'w') as raw_file:
+            open(rnafold_file.name, 'w') as rnafold_file:
 
         # This calls RNAfold (kinda like from the command line):
-        process = Popen(['RNAfold', '--noPS'],
+        process = Popen(['RNAfold',
+                         '--noPS',
+                         '-T', str(temp)],
                         stdin=fasta_file,
-                        stdout=raw_file)
+                        stdout=rnafold_file)
         process.wait()
-        raw_file.flush()
+        rnafold_file.flush()
 
     # Read raw results file:
-    results = {}
+    return _read_rnafold_file(rnafold_file.name).values()
 
-    with open(raw_filename) as raw_file:
-        for line in raw_file:
+
+def _get_gc(seqs):
+    '''Get GC content.'''
+    return [(seq.count('G') + seq.count('C')) / len(seq) for seq in seqs]
+
+
+def _read_rnafold_file(rnafold_filename):
+    '''Read RNAfold file file.'''
+    results = OrderedDict()
+
+    with open(rnafold_filename) as rnafold_file:
+        for line in rnafold_file:
             if line.startswith('>'):
                 # If this is a fasta header line, store the name:
                 name = line[1:].strip()
@@ -63,65 +101,27 @@ def run_rnafold(fasta_filename):
 
                 if numbers:
                     # Store name and number in results:
-                    results[name] = float(numbers[0])
+                    results[int(name)] = float(numbers[0])
 
     return results
 
 
-def get_minimum_free_energy(seqs):
-    '''Returns minimum free energy of supplied DNA / RNA sequences.'''
-    input_filename = seq_utils.write_fasta({str(idx): seq
-                                            for idx, seq in enumerate(seqs)})
+def main(args):
+    '''main method.'''
+    pre_seq = args[0]
+    trunc_len = int(args[1])
+    tag = args[2]
 
-    with open(tempfile.NamedTemporaryFile().name, 'w') as output_file:
-        proc = Popen('RNAfold',
-                     stdin=open(input_filename),
-                     stdout=output_file)
+    rib_pred = RiboswitchPredicter(pre_seq, trunc_len, tag)
+    df = rib_pred.get_data()
+    print df
 
-        proc.wait()
-
-        _cleanup(os.getcwd(), 'Seq\\d+_ss.ps')
-
-        mfes = []
-        pattern = re.compile(r'[+-]?\d+\.\d+')
-
-        with open(output_file.name) as out_file:
-            for line in out_file.readlines():
-                src = pattern.search(line)
-
-                if src:
-                    mfes.append(float(src.group()))
-
-        return mfes
-
-
-def write_results_to_csv(results, csv_filename):
-    '''Writes the results to a csv file.'''
-    with open(csv_filename, 'w') as csv_file:
-        for name, value in results.iteritems():
-            csv_file.write(name + ',' + str(value) + '\n')
-
-
-def _cleanup(drctry, pattern):
-    '''Deletes files in directory matching pattern.'''
-    for filename in os.listdir(drctry):
-        if re.search(pattern, filename):
-            os.remove(os.path.join(drctry, filename))
-
-
-def main():
-    '''main method to start the program.'''
-    fasta_filename = 'all_seq.fasta.txt'
-
-    # Write fasta file:
-    write_csv_to_fasta('all_seq.csv', fasta_filename)
-
-    # Runs the RNAfold program with input from fasta file:
-    results = run_rnafold(fasta_filename)
-
-    # Writes the results to a csv file:
-    write_results_to_csv(results, 'results.csv')
+    # Normalise:
+    df_norm = df.ix[:, 1:]
+    df_norm = (df_norm - df_norm.mean()) / (df_norm.max() - df_norm.min())
+    df_norm.insert(0, df.ix[:, 0].name, df.ix[:, 0].values)
+    print df_norm
 
 
 if __name__ == '__main__':
-    main()
+    main(sys.argv[1:])
