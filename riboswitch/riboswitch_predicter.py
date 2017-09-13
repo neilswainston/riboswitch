@@ -115,12 +115,14 @@ def main(args):
     rib_pred = RiboswitchPredicter(pre_seq, trunc_len, tag)
     df = rib_pred.get_data()
     print df
+    df.to_csv(args[3] + '.csv', index=False)
 
     # Normalise:
     df_norm = df.ix[:, 1:]
-    df_norm = (df_norm - df_norm.mean()) / (df_norm.max() - df_norm.min())
+    df_norm = (df_norm - df_norm.mean()) / df_norm.std()
     df_norm.insert(0, df.ix[:, 0].name, df.ix[:, 0].values)
     print df_norm
+    df_norm.to_csv(args[3] + '_norm.csv', index=False)
 
 
 if __name__ == '__main__':
