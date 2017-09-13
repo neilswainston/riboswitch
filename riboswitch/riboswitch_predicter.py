@@ -24,11 +24,12 @@ import pandas as pd
 class RiboswitchPredicter(object):
     '''RiboswitchPredicter class.'''
 
-    def __init__(self, pre_seq, trunc_len, tag):
+    def __init__(self, pre_seq, trunc_len, mutate_seq, post_seq):
         self.__df = pd.DataFrame()
         self.__pre_seq = pre_seq
         self.__trunc_len = trunc_len
-        self.__df['variant'] = get_all_rev_trans(tag)
+        self.__post_seq = post_seq if post_seq is not None else ''
+        self.__df['variant'] = get_all_rev_trans(mutate_seq)
 
     def get_data(self, temps=None):
         '''Gets data.'''
@@ -54,7 +55,8 @@ class RiboswitchPredicter(object):
 
     def __get_seqs(self, pre_seq):
         '''Get sequences.'''
-        return [pre_seq + variant for variant in self.__df['variant']]
+        return [pre_seq + variant + self.__post_seq
+                for variant in self.__df['variant']]
 
 
 def _get_mfes(seqs, temp=37.0):
@@ -110,19 +112,20 @@ def main(args):
     '''main method.'''
     pre_seq = args[0]
     trunc_len = int(args[1])
-    tag = args[2]
+    mutate_seq = args[2]
+    post_seq = args[3] if len(args) == 3 else None
 
-    rib_pred = RiboswitchPredicter(pre_seq, trunc_len, tag)
+    rib_pred = RiboswitchPredicter(pre_seq, trunc_len, mutate_seq, post_seq)
     df = rib_pred.get_data()
     print df
-    df.to_csv(args[3] + '.csv', index=False)
+    df.to_csv(args[4] + '.csv', index=False)
 
     # Normalise:
     df_norm = df.ix[:, 1:]
     df_norm = (df_norm - df_norm.mean()) / df_norm.std()
     df_norm.insert(0, df.ix[:, 0].name, df.ix[:, 0].values)
     print df_norm
-    df_norm.to_csv(args[3] + '_norm.csv', index=False)
+    df_norm.to_csv(args[4] + '_norm.csv', index=False)
 
 
 if __name__ == '__main__':
