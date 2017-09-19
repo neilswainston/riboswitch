@@ -40,13 +40,19 @@ class RiboswitchPredicter(object):
             temps = [30.0, 37.0]
 
         for temp in temps:
+            orig_rnafold = _run_rnafold(seqs, temp=temp)
+            trunc_rnafold = _run_rnafold(trunc_seqs, temp=temp)
+
             suf = str(temp)
-            self.__df['dg_' + suf] = \
-                _get_mfes(seqs, temp=temp)
-            self.__df['dg_trunc_' + suf] = \
-                _get_mfes(trunc_seqs, temp=temp)
+
+            self.__df['dg_' + suf] = [val[1] for val in orig_rnafold]
+            self.__df['dg_trunc_' + suf] = [val[1] for val in trunc_rnafold]
             self.__df['ddg_' + suf] = \
                 self.__df['dg_' + suf] - self.__df['dg_trunc_' + suf]
+
+            self.__df['structure_' + suf] = [val[0] for val in orig_rnafold]
+            self.__df['structure_trunc_' + suf] = [val[0]
+                                                   for val in trunc_rnafold]
 
         self.__df['gc'] = _get_gc(seqs)
         self.__df['gc_trunc'] = _get_gc(trunc_seqs)
@@ -59,7 +65,7 @@ class RiboswitchPredicter(object):
                 for variant in self.__df['variant']]
 
 
-def _get_mfes(seqs, temp=37.0):
+def _run_rnafold(seqs, temp=37.0):
     '''Run RNAfold.'''
     fasta_filename = write_fasta(OrderedDict(zip(range(len(seqs)), seqs)))
 
@@ -80,7 +86,7 @@ def _get_mfes(seqs, temp=37.0):
         rnafold_file.flush()
 
     # Read raw results file:
-    return _read_rnafold_file(rnafold_file.name).values()
+    return _read_rnafold_file(rnafold_file.name)
 
 
 def _get_gc(seqs):
@@ -90,20 +96,15 @@ def _get_gc(seqs):
 
 def _read_rnafold_file(rnafold_filename):
     '''Read RNAfold file file.'''
-    results = OrderedDict()
+    results = []
 
     with open(rnafold_filename) as rnafold_file:
         for line in rnafold_file:
-            if line.startswith('>'):
-                # If this is a fasta header line, store the name:
-                name = line[1:].strip()
-            else:
-                # Look to see if the line contains a number:
-                numbers = re.findall(r'[+-]?\d+.\d+', line)
+            # Look to see if the line contains a number:
+            mfe = re.findall(r'(?<=[^>])([+-]?\d+.\d+)', line)
 
-                if numbers:
-                    # Store name and number in results:
-                    results[int(name)] = float(numbers[0])
+            if mfe:
+                results.append([line.split()[0], float(mfe[0])])
 
     return results
 
@@ -121,11 +122,11 @@ def main(args):
     df.to_csv(args[4] + '.csv', index=False)
 
     # Normalise:
-    df_norm = df.ix[:, 1:]
-    df_norm = (df_norm - df_norm.mean()) / df_norm.std()
-    df_norm.insert(0, df.ix[:, 0].name, df.ix[:, 0].values)
-    print df_norm
-    df_norm.to_csv(args[4] + '_norm.csv', index=False)
+    # df_norm = df.ix[:, 1:]
+    # df_norm = (df_norm - df_norm.mean()) / df_norm.std()
+    # df_norm.insert(0, df.ix[:, 0].name, df.ix[:, 0].values)
+    # print df_norm
+    # df_norm.to_csv(args[4] + '_norm.csv', index=False)
 
 
 if __name__ == '__main__':
