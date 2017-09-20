@@ -24,43 +24,47 @@ import pandas as pd
 class RiboswitchPredicter(object):
     '''RiboswitchPredicter class.'''
 
-    def __init__(self, pre_seq, trunc_len, mutate_seq, post_seqs):
+    def __init__(self, pre_seqs, trunc_len, mutate_seq, post_seqs):
         self.__df = pd.DataFrame()
-        self.__pre_seq = pre_seq
+        self.__pre_seqs = pre_seqs if pre_seqs is not None else []
         self.__trunc_len = trunc_len
         self.__post_seqs = post_seqs if post_seqs is not None else []
         self.__df['variant'] = get_all_rev_trans(mutate_seq)
 
     def get_data(self, temps=None):
         '''Gets data.'''
-        for idx in range(len(self.__post_seqs) + 1):
-            post_seq = ''.join(self.__post_seqs[:idx])
-            seqs = self.__get_seqs(self.__pre_seq, post_seq)
-            trunc_seqs = self.__get_seqs(self.__pre_seq[-self.__trunc_len:],
-                                         post_seq)
+        for pre_idx in range(len(self.__pre_seqs) + 1):
+            pre_seq = ''.join(self.__pre_seqs[:pre_idx + 1])
 
-            if temps is None:
-                temps = [30.0, 37.0]
+            for post_idx in range(len(self.__post_seqs) + 1):
+                post_seq = ''.join(self.__post_seqs[:post_idx])
+                seqs = self.__get_seqs(pre_seq, post_seq)
+                trunc_seqs = self.__get_seqs(pre_seq[-self.__trunc_len:],
+                                             post_seq)
 
-            for temp in temps:
-                orig_rnafold = _run_rnafold(seqs, temp=temp)
-                trunc_rnafold = _run_rnafold(trunc_seqs, temp=temp)
+                if temps is None:
+                    temps = [30.0, 37.0]
 
-                suf = str(idx) + '_' + str(temp)
+                for temp in temps:
+                    orig_rnafold = _run_rnafold(seqs, temp=temp)
+                    trunc_rnafold = _run_rnafold(trunc_seqs, temp=temp)
 
-                self.__df['dg_' + suf] = [val[1] for val in orig_rnafold]
-                self.__df['dg_trunc_' + suf] = \
-                    [val[1] for val in trunc_rnafold]
-                self.__df['ddg_' + suf] = \
-                    self.__df['dg_' + suf] - self.__df['dg_trunc_' + suf]
+                    suf = '_'.join([str(val)
+                                    for val in [pre_idx + 1, post_idx, temp]])
 
-                self.__df['structure_' + suf] = \
-                    [val[0] for val in orig_rnafold]
-                self.__df['structure_trunc_' + suf] = \
-                    [val[0] for val in trunc_rnafold]
+                    self.__df['dg_' + suf] = [val[1] for val in orig_rnafold]
+                    self.__df['dg_trunc_' + suf] = \
+                        [val[1] for val in trunc_rnafold]
+                    self.__df['ddg_' + suf] = \
+                        self.__df['dg_' + suf] - self.__df['dg_trunc_' + suf]
 
-            self.__df['gc_' + str(idx)] = _get_gc(seqs)
-            self.__df['gc_trunc' + str(idx)] = _get_gc(trunc_seqs)
+                    self.__df['structure_' + suf] = \
+                        [val[0] for val in orig_rnafold]
+                    self.__df['structure_trunc_' + suf] = \
+                        [val[0] for val in trunc_rnafold]
+
+                self.__df['gc_' + str(post_idx)] = _get_gc(seqs)
+                self.__df['gc_trunc' + str(post_idx)] = _get_gc(trunc_seqs)
 
         return self.__df
 
@@ -116,22 +120,24 @@ def _read_rnafold_file(rnafold_filename):
 
 def main(args):
     '''main method.'''
-    pre_seq = args[1]
-    trunc_len = int(args[2])
-    mutate_seq = args[3]
-    post_seqs = args[4:]
+    trunc_idx = -1
 
-    rib_pred = RiboswitchPredicter(pre_seq, trunc_len, mutate_seq, post_seqs)
+    for trunc_idx, arg in enumerate(args):
+        try:
+            int(arg)
+            break
+        except ValueError:
+            continue
+
+    pre_seqs = args[1:trunc_idx]
+    trunc_len = int(args[trunc_idx])
+    mutate_seq = args[trunc_idx + 1]
+    post_seqs = args[trunc_idx + 2:]
+
+    rib_pred = RiboswitchPredicter(pre_seqs, trunc_len, mutate_seq, post_seqs)
     df = rib_pred.get_data()
     print df
     df.to_csv(args[0] + '.csv', index=False)
-
-    # Normalise:
-    # df_norm = df.ix[:, 1:]
-    # df_norm = (df_norm - df_norm.mean()) / df_norm.std()
-    # df_norm.insert(0, df.ix[:, 0].name, df.ix[:, 0].values)
-    # print df_norm
-    # df_norm.to_csv(args[4] + '_norm.csv', index=False)
 
 
 if __name__ == '__main__':
