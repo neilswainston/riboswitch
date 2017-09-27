@@ -51,7 +51,10 @@ class RiboswitchPredicter(object):
                     trunc_rnafold = _run_rnafold(trunc_seqs, temp=temp)
 
                     suf = '_'.join([str(val)
-                                    for val in [pre_idx + 1, post_idx, temp]])
+                                    for val in [len(pre_seq),
+                                                len(self.__df['variant'][0]) +
+                                                len(post_seq),
+                                                temp]])
 
                     self.__df['dg_' + suf] = [val[1] for val in orig_rnafold]
                     self.__df['dg_trunc_' + suf] = \
@@ -59,12 +62,10 @@ class RiboswitchPredicter(object):
                     self.__df['ddg_' + suf] = \
                         self.__df['dg_' + suf] - self.__df['dg_trunc_' + suf]
 
-                    self.__df['structure_' + suf] = \
+                    self.__df['struct_' + suf] = \
                         [val[0] for val in orig_rnafold]
-                    self.__df['structure_trunc_' + suf] = \
+                    self.__df['struct_trunc_' + suf] = \
                         [val[0] for val in trunc_rnafold]
-
-                suf = '_'.join([str(val) for val in [pre_idx + 1, post_idx]])
 
         return self.__df
 
