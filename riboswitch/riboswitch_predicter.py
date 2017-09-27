@@ -30,11 +30,12 @@ class RiboswitchPredicter(object):
         self.__trunc_len = trunc_len
         self.__post_seqs = post_seqs if post_seqs is not None else []
         self.__df['variant'] = get_all_rev_trans(mutate_seq)
+        self.__df['gc'] = _get_gc(self.__df['variant'])
 
     def get_data(self, temps=None):
         '''Gets data.'''
-        for pre_idx in range(len(self.__pre_seqs) + 1):
-            pre_seq = ''.join(self.__pre_seqs[:pre_idx + 1])
+        for pre_idx in reversed(range(len(self.__pre_seqs))):
+            pre_seq = ''.join(self.__pre_seqs[pre_idx:])
 
             for post_idx in range(len(self.__post_seqs) + 1):
                 post_seq = ''.join(self.__post_seqs[:post_idx])
@@ -43,7 +44,7 @@ class RiboswitchPredicter(object):
                                              post_seq)
 
                 if temps is None:
-                    temps = [30.0, 37.0]
+                    temps = [37.0]
 
                 for temp in temps:
                     orig_rnafold = _run_rnafold(seqs, temp=temp)
@@ -63,8 +64,7 @@ class RiboswitchPredicter(object):
                     self.__df['structure_trunc_' + suf] = \
                         [val[0] for val in trunc_rnafold]
 
-                self.__df['gc_' + str(post_idx)] = _get_gc(seqs)
-                self.__df['gc_trunc' + str(post_idx)] = _get_gc(trunc_seqs)
+                suf = '_'.join([str(val) for val in [pre_idx + 1, post_idx]])
 
         return self.__df
 
