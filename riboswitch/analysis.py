@@ -13,6 +13,7 @@ To view a copy of this license, visit <http://opensource.org/licenses/MIT/>.
 import sys
 
 from pandas.plotting import scatter_matrix
+from sklearn.ensemble.forest import RandomForestRegressor
 from sklearn.feature_selection import RFE
 from sklearn.linear_model import LinearRegression, RandomizedLasso
 from sklearn.metrics.regression import mean_squared_error
@@ -58,7 +59,7 @@ def _plot_scatter(df, out='scatter.png'):
 def _get_train_test(df, test_size=0.1, scale_x=True, scale_y=False):
     '''Splits data into train / test.'''
     x_df = df.select_dtypes(include=['float64'])
-    y_df = pd.DataFrame(df['log_max_min_ratio'], columns=['log_max_min_ratio'])
+    y_df = pd.DataFrame(df['max_min_ratio'], columns=['max_min_ratio'])
     x_df = x_df.drop(['min_mean', 'min_sd', 'max_mean', 'max_sd',
                       'max_min_ratio', 'log_max_min_ratio'], axis=1)
 
@@ -78,7 +79,7 @@ def _standard_scale(df):
 
 
 def _rfe(x_train, x_test, y_train, y_test):
-    '''Perform linear regression.'''
+    '''Perform recursive feature elimination.'''
     lin_reg = LinearRegression()
     rfe = RFE(estimator=lin_reg, n_features_to_select=1, step=1)
     rfe.fit(x_train, y_train)
@@ -96,6 +97,14 @@ def _stab_select(x_train, y_train):
 
     for vals in reversed(sorted(zip(rlasso.scores_, x_train.columns))):
         print '\t'.join([str(val) for val in vals])
+
+
+def _rand_for_regress(x_train, x_test, y_train, y_test):
+    '''Perform random forest regressor.'''
+    rand_for = RandomForestRegressor()
+    rand_for.fit(x_train, np.ravel(y_train))
+
+    _print_result(y_test, rand_for.predict(x_test))
 
 
 def _print_result(y_test, y_pred):
@@ -124,9 +133,10 @@ def main(args):
 
     # _plot_scatter(df)
 
-    x_train, x_test, y_train, y_test = _get_train_test(df, test_size=0.05)
+    x_train, x_test, y_train, y_test = _get_train_test(df, test_size=0.1)
     _rfe(x_train, x_test, y_train, y_test)
     _stab_select(x_train, y_train)
+    _rand_for_regress(x_train, x_test, y_train, y_test)
 
 
 if __name__ == '__main__':
