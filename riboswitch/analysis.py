@@ -16,6 +16,7 @@ from sklearn.feature_selection import RFE
 from sklearn.linear_model import LinearRegression, RandomizedLasso
 from sklearn.metrics.regression import mean_squared_error
 from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
 from sklearn.preprocessing.imputation import Imputer
 
 import matplotlib.pyplot as plt
@@ -52,11 +53,17 @@ def _plot_scatter(df):
 def _get_train_test(df, test_size=0.1):
     '''Splits data into train / test.'''
     x_df = df.select_dtypes(include=['float64'])
-    y_df = df['max_min_ratio']
+    y_df = pd.DataFrame(df['max_min_ratio'], columns=['max_min_ratio'])
     x_df = x_df.drop(['min_mean', 'min_sd', 'max_mean', 'max_sd',
                       'max_min_ratio'], axis=1)
 
     return train_test_split(x_df, y_df, test_size=test_size)
+
+
+def _standard_scale(df):
+    '''Perform standard scaling of data.'''
+    scaler = StandardScaler()
+    return pd.DataFrame(scaler.fit_transform(df), columns=df.columns)
 
 
 def _rfe(x_train, x_test, y_train, y_test):
@@ -82,11 +89,10 @@ def _stab_select(x_train, y_train):
 
 def _print_result(y_test, y_pred):
     '''Prints result.'''
-    for vals in zip(y_test, y_pred):
+    for vals in zip(y_test.values, y_pred):
         print '\t'.join([str(val) for val in vals])
 
-    print 'MSE: ' + str(mean_squared_error([[val] for val in y_test],
-                                           y_pred))
+    print 'MSE: ' + str(mean_squared_error(y_test.values, y_pred))
 
 
 def main(args):
@@ -103,8 +109,14 @@ def main(args):
     # df.hist(bins=10, figsize=(20, 15))
     # plt.show()
 
-    _plot_scatter(df)
+    # _plot_scatter(df)
+
     x_train, x_test, y_train, y_test = _get_train_test(df)
+    x_train = _standard_scale(x_train)
+    x_test = _standard_scale(x_test)
+    y_train = _standard_scale(y_train)
+    y_test = _standard_scale(y_test)
+
     _rfe(x_train, x_test, y_train, y_test)
     _stab_select(x_train, y_train)
 
