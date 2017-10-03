@@ -12,9 +12,10 @@ To view a copy of this license, visit <http://opensource.org/licenses/MIT/>.
 import sys
 
 from pandas.plotting import scatter_matrix
+from sklearn.feature_selection import RFE, RFECV
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics.regression import mean_squared_error
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import StratifiedKFold, train_test_split
 from sklearn.preprocessing.imputation import Imputer
 
 import matplotlib.pyplot as plt
@@ -51,14 +52,22 @@ def _linear_regression(df):
     '''Perform linear regression.'''
     x_df = df.select_dtypes(include=['float64'])
     y_df = df['max_min_ratio']
-    x_df.drop('max_min_ratio', axis=1)
+    x_df = x_df.drop(['min_mean', 'min_sd', 'max_mean', 'max_sd',
+                      'max_min_ratio'], axis=1)
+
     x_train, x_test, y_train, y_test = \
-        train_test_split(x_df, y_df, test_size=0.2)
+        train_test_split(x_df, y_df, test_size=0.1)
 
     lin_reg = LinearRegression()
-    lin_reg.fit(x_train, y_train)
 
-    predictions = lin_reg.predict(x_test)
+    rfe = RFE(estimator=lin_reg, n_features_to_select=1, step=1)
+    rfe.fit(x_train, y_train)
+    print sorted(zip(map(lambda x: round(x, 4), rfe.ranking_),
+                     x_train.columns))
+
+    # lin_reg.fit(x_train, y_train)
+
+    predictions = rfe.predict(x_test)
 
     print predictions
     print y_test
