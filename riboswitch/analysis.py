@@ -49,24 +49,20 @@ def _plot_scatter(df):
 
 def _linear_regression(df):
     '''Perform linear regression.'''
-    train, test = train_test_split(df, test_size=0.2)
-
-    attributes = ['ddg_105_18_37.0',
-                  'ddg_105_60_37.0',
-                  'ddg_105_844_37.0',
-                  'ddg_159_18_37.0',
-                  'ddg_159_60_37.0',
-                  'ddg_159_844_37.0']
-
-    print train[attributes]
+    x_df = df.select_dtypes(include=['float64'])
+    y_df = df['max_min_ratio']
+    x_df.drop('max_min_ratio', axis=1)
+    x_train, x_test, y_train, y_test = \
+        train_test_split(x_df, y_df, test_size=0.2)
 
     lin_reg = LinearRegression()
-    lin_reg.fit([[val] for val in train['ddg_105_18_37.0']],
-                [[val] for val in train['max_min_ratio']])
-    predictions = lin_reg.predict([[val] for val in test['ddg_105_18_37.0']])
+    lin_reg.fit(x_train, y_train)
+
+    predictions = lin_reg.predict(x_test)
+
     print predictions
-    print test['max_min_ratio']
-    print mean_squared_error([[val] for val in test['max_min_ratio']],
+    print y_test
+    print mean_squared_error([[val] for val in y_test],
                              predictions)
 
 
