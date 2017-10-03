@@ -12,10 +12,10 @@ To view a copy of this license, visit <http://opensource.org/licenses/MIT/>.
 import sys
 
 from pandas.plotting import scatter_matrix
-from sklearn.feature_selection import RFE, RFECV
-from sklearn.linear_model import LinearRegression
+from sklearn.feature_selection import RFE
+from sklearn.linear_model import LinearRegression, RandomizedLasso
 from sklearn.metrics.regression import mean_squared_error
-from sklearn.model_selection import StratifiedKFold, train_test_split
+from sklearn.model_selection import train_test_split
 from sklearn.preprocessing.imputation import Imputer
 
 import matplotlib.pyplot as plt
@@ -24,7 +24,6 @@ import pandas as pd
 
 def clean(df, strategy='median'):
     '''Cleans DataFrame.'''
-    df.info()
     imputer = Imputer(strategy=strategy)
     object_df = df.select_dtypes(include=['object'])
     float_df = df.select_dtypes(include=['float64'])
@@ -37,42 +36,57 @@ def clean(df, strategy='median'):
 
 def _plot_scatter(df):
     '''Make scatter plot.'''
-    attributes = ['dg_105_18_37.0',
-                  'dg_105_60_37.0',
-                  'dg_105_844_37.0',
-                  'dg_159_18_37.0',
-                  'dg_159_60_37.0',
-                  'dg_159_844_37.0']
+    attributes = ['gc',
+                  'ddg_105_18_37.0',
+                  'ddg_105_60_37.0',
+                  'ddg_105_844_37.0',
+                  'ddg_159_18_37.0',
+                  'ddg_159_60_37.0',
+                  'ddg_159_844_37.0',
+                  'max_min_ratio']
 
     scatter_matrix(df[attributes], figsize=(8, 6))
     plt.show()
 
 
-def _linear_regression(df):
-    '''Perform linear regression.'''
+def _get_train_test(df, test_size=0.1):
+    '''Splits data into train / test.'''
     x_df = df.select_dtypes(include=['float64'])
     y_df = df['max_min_ratio']
     x_df = x_df.drop(['min_mean', 'min_sd', 'max_mean', 'max_sd',
                       'max_min_ratio'], axis=1)
 
-    x_train, x_test, y_train, y_test = \
-        train_test_split(x_df, y_df, test_size=0.1)
+    return train_test_split(x_df, y_df, test_size=test_size)
 
+
+def _rfe(x_train, x_test, y_train, y_test):
+    '''Perform linear regression.'''
     lin_reg = LinearRegression()
-
     rfe = RFE(estimator=lin_reg, n_features_to_select=1, step=1)
     rfe.fit(x_train, y_train)
-    print sorted(zip(map(lambda x: round(x, 4), rfe.ranking_),
-                     x_train.columns))
 
-    # lin_reg.fit(x_train, y_train)
+    for vals in reversed(sorted(zip(rfe.ranking_, x_train.columns))):
+        print '\t'.join([str(val) for val in vals])
 
-    predictions = rfe.predict(x_test)
+    _print_result(y_test, rfe.predict(x_test))
 
-    print predictions
-    print y_test
-    print mean_squared_error([[val] for val in y_test],
-                             predictions)
+
+def _stab_select(x_train, y_train):
+    '''Perform stability selection.'''
+    rlasso = RandomizedLasso(alpha=0.025)
+    rlasso.fit(x_train, y_train)
+
+    for vals in reversed(sorted(zip(rlasso.scores_, x_train.columns))):
+        print '\t'.join([str(val) for val in vals])
+
+
+def _print_result(y_test, y_pred):
+    '''Prints result.'''
+    for vals in zip(y_test, y_pred):
+        print '\t'.join([str(val) for val in vals])
+
+    print 'MSE: ' + str(mean_squared_error([[val] for val in y_test],
+                                           y_pred))
 
 
 def main(args):
@@ -89,8 +103,10 @@ def main(args):
     # df.hist(bins=10, figsize=(20, 15))
     # plt.show()
 
-    # _plot_scatter(df)
-    _linear_regression(df)
+    _plot_scatter(df)
+    x_train, x_test, y_train, y_test = _get_train_test(df)
+    _rfe(x_train, x_test, y_train, y_test)
+    _stab_select(x_train, y_train)
 
 
 if __name__ == '__main__':
