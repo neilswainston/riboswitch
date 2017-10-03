@@ -78,16 +78,9 @@ def _standard_scale(df):
     return pd.DataFrame(scaler.fit_transform(df), columns=df.columns)
 
 
-def _rfe(x_train, x_test, y_train, y_test):
-    '''Perform recursive feature elimination.'''
-    lin_reg = LinearRegression()
-    rfe = RFE(estimator=lin_reg, n_features_to_select=1, step=1)
-    rfe.fit(x_train, y_train)
-
-    for vals in reversed(sorted(zip(rfe.ranking_, x_train.columns))):
-        print '\t'.join([str(val) for val in vals])
-
-    _print_result(y_test, rfe.predict(x_test))
+def _lin_reg(x_train, x_test, y_train, y_test):
+    '''Perform recursive feature elimination on linear regression.'''
+    _rfe((x_train, x_test, y_train, y_test), LinearRegression())
 
 
 def _stab_select(x_train, y_train):
@@ -100,11 +93,23 @@ def _stab_select(x_train, y_train):
 
 
 def _rand_for_regress(x_train, x_test, y_train, y_test):
-    '''Perform random forest regressor.'''
-    rand_for = RandomForestRegressor()
-    rand_for.fit(x_train, np.ravel(y_train))
+    '''Perform recursive feature elimination on random forest regressor.'''
+    _rfe((x_train, x_test, y_train, y_test), RandomForestRegressor())
 
-    _print_result(y_test, rand_for.predict(x_test))
+
+def _rfe((x_train, x_test, y_train, y_test), estimator,
+         n_features_to_select=5):
+    '''Perform recursive feature elimination.'''
+    rfe = RFE(estimator=estimator,
+              n_features_to_select=n_features_to_select,
+              step=1)
+
+    rfe.fit(x_train, y_train)
+
+    for vals in reversed(sorted(zip(rfe.ranking_, x_train.columns))):
+        print '\t'.join([str(val) for val in vals])
+
+    _print_result(y_test, rfe.predict(x_test))
 
 
 def _print_result(y_test, y_pred):
@@ -119,13 +124,12 @@ def main(args):
     '''main method.'''
     df = pd.read_csv(args[0])
     results_df = clean(pd.read_csv(args[1]))
-    # results_df = results_df.drop(results_df.index[0])
     results_df['max_min_ratio'] = \
         results_df['max_mean'] / results_df['min_mean']
     results_df['log_max_min_ratio'] = np.log(results_df['max_min_ratio'])
 
     df = pd.merge(df, results_df, on='variant')
-    df.to_csv('out.csv', index=False)
+    df.to_csv(args[2], index=False)
 
     # print df.describe()
     # df.hist(bins=10, figsize=(20, 15))
@@ -133,8 +137,12 @@ def main(args):
 
     # _plot_scatter(df)
 
-    x_train, x_test, y_train, y_test = _get_train_test(df, test_size=0.1)
-    _rfe(x_train, x_test, y_train, y_test)
+    x_train, x_test, y_train, y_test = \
+        _get_train_test(df, test_size=float(args[3]))
+
+    y_train = np.ravel(y_train)
+
+    _lin_reg(x_train, x_test, y_train, y_test)
     _stab_select(x_train, y_train)
     _rand_for_regress(x_train, x_test, y_train, y_test)
 
