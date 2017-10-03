@@ -35,7 +35,7 @@ def clean(df, strategy='median'):
     return pd.concat([object_df, float_df], axis=1)
 
 
-def _plot_scatter(df):
+def _plot_scatter(df, out='scatter.png'):
     '''Make scatter plot.'''
     attributes = ['gc',
                   'ddg_105_18_37.0',
@@ -46,16 +46,20 @@ def _plot_scatter(df):
                   'ddg_159_844_37.0',
                   'max_min_ratio']
 
-    scatter_matrix(df[attributes], figsize=(8, 6))
-    plt.show()
+    scatter_matrix(df[attributes], figsize=(20, 16))
+    plt.savefig(out, dpi=800)
 
 
-def _get_train_test(df, test_size=0.1):
+def _get_train_test(df, test_size=0.1, scale=True):
     '''Splits data into train / test.'''
     x_df = df.select_dtypes(include=['float64'])
     y_df = pd.DataFrame(df['max_min_ratio'], columns=['max_min_ratio'])
     x_df = x_df.drop(['min_mean', 'min_sd', 'max_mean', 'max_sd',
                       'max_min_ratio'], axis=1)
+
+    if scale:
+        x_df = _standard_scale(x_df)
+        y_df = _standard_scale(y_df)
 
     return train_test_split(x_df, y_df, test_size=test_size)
 
@@ -99,6 +103,7 @@ def main(args):
     '''main method.'''
     df = pd.read_csv(args[0])
     results_df = clean(pd.read_csv(args[1]))
+    # results_df = results_df.drop(results_df.index[0])
     results_df['max_min_ratio'] = \
         results_df['max_mean'] / results_df['min_mean']
 
@@ -111,12 +116,7 @@ def main(args):
 
     # _plot_scatter(df)
 
-    x_train, x_test, y_train, y_test = _get_train_test(df)
-    x_train = _standard_scale(x_train)
-    x_test = _standard_scale(x_test)
-    y_train = _standard_scale(y_train)
-    y_test = _standard_scale(y_test)
-
+    x_train, x_test, y_train, y_test = _get_train_test(df, test_size=0.05)
     _rfe(x_train, x_test, y_train, y_test)
     _stab_select(x_train, y_train)
 
