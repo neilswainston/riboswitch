@@ -18,6 +18,7 @@ import sys
 import tempfile
 
 from synbiochem.utils.seq_utils import get_all_rev_trans, write_fasta
+
 import pandas as pd
 
 
